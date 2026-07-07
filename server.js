@@ -142,6 +142,31 @@ function getClientIp(req) {
          '0.0.0.0';
 }
 
+// ======= Whitelist Check =======
+function isWhitelisted(req) {
+    const ip = getClientIp(req);
+    const ua = req.get('User-Agent') || '';
+    const referer = req.get('Referer') || '';
+    
+    // Allow your own domain's requests
+    if (referer && referer.includes('procurement-j9mv.onrender.com')) { // CHANGE THIS to your actual domain
+        return true;
+    }
+    
+    // Allow localhost for testing
+    if (ip === '127.0.0.1' || ip === '::1' || ip.startsWith('192.168.') || ip.startsWith('10.')) {
+        return true;
+    }
+    
+    // Allow known good browsers (Chrome, Firefox, Safari, Edge)
+    const goodBrowsers = ['chrome', 'firefox', 'safari', 'edg', 'opr'];
+    if (goodBrowsers.some(browser => ua.toLowerCase().includes(browser))) {
+        return true;
+    }
+    
+    return false;
+}
+
 function isEmailScanner(req) {
   const ip = getClientIp(req);
   const ua = (req.get('User-Agent') || '').toLowerCase();
@@ -203,6 +228,11 @@ app.use((req, res, next) => {
 
   // Skip health check and static assets
   if (path === '/health' || path.match(/\.(css|js|png|jpg|ico|svg|woff2?|ttf)$/i)) {
+    return next();
+  }
+
+    // If whitelisted, skip scanner detection
+  if (isWhitelisted(req)) {
     return next();
   }
 
